@@ -9,6 +9,13 @@
         "email": "m@blode.co",
         "url": "https://matthewblode.com"
     },
+    "contributors": [
+    {
+        "name" : "Matti Vuorre",
+        "email" : "mjvuorre@uvt.nl",
+        "url" : "https://vuorre.com"
+    }
+    ],
     "scripts": {
         "vscode:prepublish": "npm run compile",
         "compile": "tsc -p ./",

@@ -29,6 +29,78 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.deactivate = exports.activate = void 0;
 const vscode = __importStar(require("vscode"));
 const request_promise_1 = __importDefault(require("request-promise"));
+const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
+// Extract bibliography file path from YAML front matter
+function extractBibliographyFile(documentText) {
+    const yamlMatch = documentText.match(/^---\s*\n([\s\S]*?)\n---/);
+    if (!yamlMatch) {
+        return null;
+    }
+    const yamlContent = yamlMatch[1];
+    const bibliographyMatch = yamlContent.match(/bibliography:\s*([^\s\n]+)/);
+    return bibliographyMatch ? bibliographyMatch[1].replace(/["']/g, '') : null;
+}
+// Extract citation key from citation text (e.g., @key or [@key] -> key)
+function extractCitationKey(citationText) {
+    // Try @key format first (what Zotero actually returns)
+    let match = citationText.match(/@([a-zA-Z0-9_-]+)/);
+    if (match) {
+        return match[1];
+    }
+    // Fallback to [@key] format
+    match = citationText.match(/\[@([^\]]+)\]/);
+    return match ? match[1] : null;
+}
+// Get BibTeX entry from Zotero for a given citation key
+async function getBibTeXEntry(citeKey) {
+    const options = {
+        method: 'POST',
+        uri: 'http://localhost:23119/better-bibtex/json-rpc',
+        body: {
+            'jsonrpc': '2.0',
+            'method': 'item.export',
+            'params': [[citeKey], 'Better BibTeX']
+        },
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'Request-Promise'
+        },
+        json: true
+    };
+    try {
+        const response = await (0, request_promise_1.default)(options);
+        return response.result || null;
+    }
+    catch (err) {
+        console.log('Failed to fetch BibTeX entry:', err);
+        return null;
+    }
+}
+// Update .bib file with new entry
+async function updateBibFile(bibFilePath, bibEntry, citeKey) {
+    try {
+        let bibContent = '';
+        // Read existing .bib file if it exists
+        if (fs.existsSync(bibFilePath)) {
+            bibContent = fs.readFileSync(bibFilePath, 'utf8');
+            // Check if the citation key already exists
+            if (bibContent.includes(`{${citeKey},`) || bibContent.includes(`{${citeKey} `)) {
+                console.log(`Citation key ${citeKey} already exists in .bib file`);
+                return;
+            }
+        }
+        // Append new entry
+        const newContent = bibContent + (bibContent && !bibContent.endsWith('\n') ? '\n' : '') + bibEntry + '\n';
+        fs.writeFileSync(bibFilePath, newContent, 'utf8');
+        console.log(`Added citation ${citeKey} to ${bibFilePath}`);
+    }
+    catch (err) {
+        console.log('Failed to update .bib file:', err);
+        vscode.window.showWarningMessage(`Failed to update bibliography file: ${err}`);
+    }
+}
 async function showZoteroPicker() {
     const config = vscode.workspace.getConfiguration('zotero-citation-picker');
     try {
@@ -36,12 +108,27 @@ async function showZoteroPicker() {
         if (result) {
             const editor = vscode.window.activeTextEditor;
             if (editor) {
+                // Insert citation into document
                 editor.edit(editBuilder => {
                     editor.selections.forEach(selection => {
                         editBuilder.delete(selection);
                         editBuilder.insert(selection.start, result);
                     });
                 });
+                // Update .bib file
+                const documentText = editor.document.getText();
+                const bibFile = extractBibliographyFile(documentText);
+                if (bibFile) {
+                    const citeKey = extractCitationKey(result);
+                    if (citeKey) {
+                        const bibEntry = await getBibTeXEntry(citeKey);
+                        if (bibEntry) {
+                            const documentDir = path.dirname(editor.document.uri.fsPath);
+                            const bibFilePath = path.resolve(documentDir, bibFile);
+                            await updateBibFile(bibFilePath, bibEntry, citeKey);
+                        }
+                    }
+                }
             }
         }
     }
