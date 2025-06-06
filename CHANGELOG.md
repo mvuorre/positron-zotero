@@ -1,6 +1,9 @@
 # Change Log
 
-All notable changes to the "zotero" extension will be documented in this file.
+## 0.2.0
+
+- Inserting a citation now updates the .bib file if one is specified in the YAML front matter (`bibliography: <filename>.bib`)
+- Default citation picker is now the VS Code picker but can be changed to Zotero's Cite as you Write popup
 
 ## 0.1.11
 

@@ -2,7 +2,7 @@
     "name": "zotero",
     "displayName": "Citation Picker for Zotero",
     "description": "Zotero Better Bibtex citation picker for VS Code",
-    "version": "0.1.11",
+    "version": "0.2.0",
     "publisher": "mblode",
     "author": {
         "name": "Matthew Blode",
