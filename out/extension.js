@@ -136,10 +136,11 @@ function parseSearchQuery(query) {
         'isbn': 'ISBN',
         'type': 'itemType'
     };
-    // Check for multiple field:value patterns separated by spaces
+    // Check for field:value patterns
     const advancedSearchPatterns = trimmedQuery.match(/(\w+):("[^"]+"|[^\s]+)/g);
     if (advancedSearchPatterns && advancedSearchPatterns.length > 0) {
         const searchConditions = [];
+        // Add field-specific searches
         for (const pattern of advancedSearchPatterns) {
             const match = pattern.match(/^(\w+):(.+)$/);
             if (match) {
@@ -149,19 +150,18 @@ function parseSearchQuery(query) {
                 searchConditions.push([searchField, 'contains', searchValue]);
             }
         }
-        // If we have multiple conditions, they are AND-ed by default
+        // Extract any remaining text that's not in field:value format
+        let remainingText = trimmedQuery;
+        for (const pattern of advancedSearchPatterns) {
+            remainingText = remainingText.replace(pattern, '').trim();
+        }
+        // If there's remaining text, add it as a general search
+        if (remainingText) {
+            searchConditions.push(['quicksearch-titleCreatorYear', 'contains', remainingText]);
+        }
         return searchConditions;
     }
-    // Check for single field:value pattern
-    const singleAdvancedPattern = /^(\w+):(.+)$/;
-    const singleMatch = trimmedQuery.match(singleAdvancedPattern);
-    if (singleMatch) {
-        const [, field, value] = singleMatch;
-        const searchField = fieldMapping[field.toLowerCase()] || field;
-        const searchValue = value.replace(/^["']|["']$/g, '').trim(); // Remove quotes
-        return [[searchField, 'contains', searchValue]];
-    }
-    // For simple queries, use quicksearch-titleCreatorYear which searches across multiple fields
+    // For simple queries without field specifiers, use quicksearch-titleCreatorYear
     return [['quicksearch-titleCreatorYear', 'contains', trimmedQuery]];
 }
 // Search Zotero database using Better BibTeX JSON-RPC
@@ -227,37 +227,26 @@ async function showVSCodePicker() {
     let searchTimeout;
     let currentSearchId = 0;
     const performSearch = async (query, searchId) => {
-        console.log(`performSearch called: "${query}" (ID: ${searchId})`);
         if (!query.trim()) {
-            console.log('Empty query, clearing items');
             picker.busy = false;
             picker.items = [];
             return;
         }
-        console.log(`Starting search for "${query}" (ID: ${searchId})`);
         picker.busy = true;
         try {
             const results = await searchZotero(query);
             // Check if this search is still the current one (not superseded by a newer search)
             if (searchId === currentSearchId) {
                 const items = results.map(result => new EntryItem(result));
-                console.log(`Search "${query}" (ID: ${searchId}): Found ${results.length} results, created ${items.length} items`);
                 // IMPORTANT: Set busy = false BEFORE setting items so they can be displayed
                 picker.busy = false;
                 picker.items = items;
-                // Debug: Check picker state after setting items
-                console.log(`After setting items: busy=${picker.busy}, enabled=${picker.enabled}, items.length=${picker.items.length}`);
-                // Force a small delay to ensure the picker has time to update
-                setTimeout(() => {
-                    console.log(`Delayed check: picker.items.length=${picker.items.length}, actualDisplayed=${picker.activeItems.length}`);
-                }, 50);
             }
             else {
-                console.log(`Discarding outdated search results for "${query}" (ID: ${searchId}, current: ${currentSearchId})`);
+                // Discard outdated search results
             }
         }
         catch (err) {
-            console.log(`Search error for "${query}":`, err.message);
             if (searchId === currentSearchId) {
                 picker.busy = false; // Set busy = false BEFORE setting error items
                 picker.items = [new ErrorItem(err.message)];
@@ -265,14 +254,12 @@ async function showVSCodePicker() {
         }
     };
     picker.onDidChangeValue(value => {
-        console.log(`onDidChangeValue: "${value}" (currentSearchId will be ${currentSearchId + 1})`);
         if (searchTimeout) {
             clearTimeout(searchTimeout);
         }
         // Increment search ID to track the latest search
         currentSearchId++;
         const thisSearchId = currentSearchId;
-        console.log(`Scheduled search for "${value}" with ID ${thisSearchId} in 300ms`);
         searchTimeout = setTimeout(() => {
             performSearch(value, thisSearchId);
         }, 300); // Debounce search by 300ms
